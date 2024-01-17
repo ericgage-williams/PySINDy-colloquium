@@ -4,14 +4,13 @@ from matplotlib.cm import rainbow
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.io import loadmat
-import pysindy as ps
 from pysindy.utils import linear_damped_SHO
 from pysindy.utils import cubic_damped_SHO
 from pysindy.utils import linear_3D
 from pysindy.utils import hopf
 from pysindy.utils import lorenz
 
-
+import pysindy as ps
 
 # ignore user warnings
 import warnings

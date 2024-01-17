@@ -3,12 +3,14 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.cm import rainbow
 import numpy as np
 from scipy.integrate import solve_ivp
-from scipy.integrate import odeint
 from scipy.io import loadmat
 import pysindy as ps
+from pysindy.utils import linear_damped_SHO
+from pysindy.utils import cubic_damped_SHO
+from pysindy.utils import linear_3D
+from pysindy.utils import hopf
 from pysindy.utils import lorenz
 from pysindy.utils import pendulum
-
 
 
 
@@ -24,111 +26,42 @@ integrator_keywords['rtol'] = 1e-12
 integrator_keywords['method'] = 'LSODA'
 integrator_keywords['atol'] = 1e-12
 
-def f(x, t):
-    return [
-        x[1],
-        -np.sin(x[0]),
-    ]
-
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
+# Generate training data
 
 dt = 0.01
 t_train = np.arange(0, 25, dt)
-x0_train = [0.5, 0]
-x_train = odeint(f, x0_train, t_train)
-
-X = x_train 
-X = X +  np.random.normal(scale=1e-4, size=x_train.shape)
-
-t_train = np.arange(0, 100, dt)
 t_train_span = (t_train[0], t_train[-1])
-x0_train = [np.pi/4, 0.1]
+x0_train = [0.5, 0]
 x_train = solve_ivp(pendulum, t_train_span,
                     x0_train, t_eval=t_train, **integrator_keywords).y.T
-x_dot_train_measured = np.array(
-    [pendulum(0, x_train[i]) for i in range(t_train.size)]
-)
 
-# Fit the models and simulate
+# Fit the model
 
 poly_order = 5
 threshold = 0.05
 
-noise_levels = [1e-4, 1e-3, 1e-2, 1e-1, 1.0]
-
-models = []
-t_sim = np.arange(0, 20, dt)
-x_sim = []
-for eps in noise_levels:
-    model = ps.SINDy(
-        optimizer=ps.STLSQ(threshold=threshold),
-        feature_library=ps.PolynomialLibrary(degree=poly_order),
-    )
-    model.fit(
-        x_train,
-        t=dt,
-        x_dot=x_dot_train_measured,
-        quiet=True,
-    )
-    models.append(model)
-    x_sim.append(model.simulate(x_train[0], t_sim))
-
-print(model.coefficients().round(4))
-print()
+model = ps.SINDy(
+    optimizer=ps.STLSQ(threshold=threshold),
+    feature_library=ps.PolynomialLibrary(degree=poly_order),
+)
+model.fit(x_train, t=dt)
 model.print()
 
-"""# Plot results
+# Simulate and plot the results
 
-fig = plt.figure(figsize=(15, 4))
-ax = fig.add_subplot(131, projection="3d")
-ax.plot(
-    x_train[: t_sim.size, 0],
-    x_train[: t_sim.size, 1],
-    x_train[: t_sim.size, 2],
-)
-plt.title("full simulation")
-ax.set(xlabel="$x$", ylabel="$y$", zlabel="$z$")
+x_sim = model.simulate(x0_train, t_train)
+plot_kws = dict(linewidth=2)
 
-model_idx = 2
-ax = fig.add_subplot(132, projection="3d")
-ax.plot(x_sim[model_idx][:, 0], x_sim[model_idx][:, 1], x_sim[model_idx][:, 2])
-plt.title(f"identified system, $\eta$={noise_levels[model_idx]:.2f}")
-ax.set(xlabel="$x$", ylabel="$y$", zlabel="$z$")
+fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+axs[0].plot(t_train, x_train[:, 0], "r", label="$x_0$", **plot_kws)
+axs[0].plot(t_train, x_train[:, 1], "b", label="$x_1$", alpha=0.4, **plot_kws)
+axs[0].plot(t_train, x_sim[:, 0], "k--", label="model", **plot_kws)
+axs[0].plot(t_train, x_sim[:, 1], "k--")
+axs[0].legend()
+axs[0].set(xlabel="t", ylabel="$x_k$")
 
-model_idx = 4
-ax = fig.add_subplot(133, projection="3d")
-ax.plot(x_sim[model_idx][:, 0], x_sim[model_idx][:, 1], x_sim[model_idx][:, 2])
-plt.title(f"identified system, $\eta$={noise_levels[model_idx]:.2f}")
-ax.set(xlabel="$x$", ylabel="$y$", zlabel="$z$")
-
-fig = plt.figure(figsize=(12, 5))
-model_idx = 2
-ax = fig.add_subplot(221)
-ax.plot(t_sim, x_train[: t_sim.size, 0], "r")
-ax.plot(t_sim, x_sim[model_idx][:, 0], "k--")
-plt.title(f"$\eta$={noise_levels[model_idx]:.2f}")
-plt.ylabel("x")
-
-ax = fig.add_subplot(223)
-ax.plot(t_sim, x_train[: t_sim.size, 1], "r")
-ax.plot(t_sim, x_sim[model_idx][:, 1], "k--")
-plt.xlabel("time")
-plt.ylabel("y")
-
-model_idx = 4
-ax = fig.add_subplot(222)
-ax.plot(t_sim, x_train[: t_sim.size, 0], "r")
-ax.plot(t_sim, x_sim[model_idx][:, 0], "k--")
-plt.title(f"$\eta$={noise_levels[model_idx]:.2f}")
-plt.ylabel("x")
-
-ax = fig.add_subplot(224)
-ax.plot(t_sim, x_train[: t_sim.size, 1], "r")
-ax.plot(t_sim, x_sim[model_idx][:, 1], "k--")
-plt.xlabel("time")
-plt.ylabel("y")
-
+axs[1].plot(x_train[:, 0], x_train[:, 1], "r", label="$x_k$", **plot_kws)
+axs[1].plot(x_sim[:, 0], x_sim[:, 1], "k--", label="model", **plot_kws)
+axs[1].legend()
+axs[1].set(xlabel="$x_1$", ylabel="$x_2$")
 plt.show()
-"""
